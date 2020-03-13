@@ -1,0 +1,201 @@
+---
+title: "SQL in R"
+author: "Jessica Jagdeo"
+date: "3/12/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      message = FALSE,
+                      warning = FALSE,
+                      connection = lter_db)
+
+library(tidyverse)
+library(here)
+library(DBI)
+library(RSQLite)
+```
+
+### 1. Connect to the database and tell R that we're using SQLite:
+
+```{r}
+
+lter_db <- DBI::dbConnect(drv = RSQLite::SQLite(),
+                          dbname = here("data", "marine.sqlite")) 
+
+# Tells R what engine you're going to use when doing SQL querying (SQLite) and tells us what database to connect to (marine.sqlite)
+
+```
+
+### 2. What tables exist in the database?
+
+To check which tables exist (table names) in a database, use 'DBI::dbListTables()':
+
+```{r}
+
+DBI::dbListTables(lter_db)
+
+# Tables are fish_data, inverts_data, and lobsters_data
+
+```
+
+### 3. Which variables are in a database table?
+
+Use 'DBI::dbListFields()':
+
+```{r}
+
+DBI::dbListFields(lter_db, "fish_data")
+
+# Column names for fish_data are year, site, common_name, and total_count
+
+```
+
+```{r}
+
+DBI::dbListFields(lter_db, "inverts_data")
+
+# Column names are month, site, common_name, 2016, 2017, 2018
+
+```
+
+#### Read in a database table as an R data frame
+
+Use 'DBI::dbReadTable()':
+
+```{r}
+
+fish_df <- DBI::dbReadTable(lter_db, "fish_data")
+class(fish_df) # Check to see if it's a data frame
+
+```
+
+#### Query a database using SQL
+
+- SELECT: Gets columns
+- FROM: What table in a database to get something from
+- Use * to indicate "get all"
+
+```{sql connection=lter_db}
+
+SELECT * FROM fish_data
+
+```
+
+To get a subset of the columns, we can just list them after SELECT, separated by a comma:
+
+```{sql connection=lter_db}
+
+SELECT year, site FROM fish_data
+
+```
+
+We might want to only query for ROWS (observations) that match a given condition we set.
+
+- In R: dplyr::filter()
+- In SQL: WHERE
+
+```{sql connection=lter_db}
+
+SELECT * FROM fish_data WHERE year == 2016
+
+```
+
+Now, let's query to keep all columns from fish_data, but only if the common_name variable matches "garibaldi"
+
+```{sql connection=lter_db}
+
+SELECT common_name, site FROM fish_data WHERE common_name == "garibaldi"
+
+```
+
+In dplyr: 
+filter for an "and" statement: , &
+
+In SQL: "and"
+
+Example: Query to only keep observations where the common_name == "garibaldi" AND site == "mohk"
+
+```{sql connection=lter_db}
+
+SELECT * FROM fish_data WHERE common_name == "garibaldi" AND site == "mohk"
+
+```
+
+In R, to write an OR statement:
+- |
+- %in%
+
+In SQL: Use OR
+
+Example: Query to keep observations where year is 2017 OR site is "abur"
+
+```{sql connection=lter_db}
+
+SELECT * FROM fish_data WHERE year == 2017 OR site == "abur"
+
+```
+
+#### Store an output from SQL querying
+
+Add in the code chunk header `output.var = "name_object"`
+
+```{sql connection=lter_db, output.var = "fish_2017_df"}
+
+SELECT * FROM fish_data WHERE year == 2017
+
+```
+
+Query using SQL from an R code chunk
+
+`DBI::dbSendQuery()`
+
+```{r}
+
+garibaldi <- dbSendQuery(lter_db, "SELECT * FROM fish_data WHERE common_name == 'garibaldi'")
+
+gar_df <- dbFetch(garibaldi)
+
+```
+
+### Querying using dplyr-ish code
+
+- `dbplyr`
+
+```{r}
+
+fish_tbl <- tbl(lter_db, "fish_data")
+
+# Some wrangling:
+
+yearly_fish <- fish_tbl %>% 
+  group_by(year) %>% 
+  summarize(
+    total_fish = sum(total_count)
+  )
+
+yearly_fish %>%  show_query() # Shows you the SQL code necessary to replicate what you did above in R dplyr
+
+yearly_fish %>%  collect() # Get the results of the SQL query
+
+```
+
+#### Adding or removing tables from a .sqlite database
+
+Use `DBI::dbWriteTable` and `DBI::dbRemoveTable` functions to add or remove tables from/to an existing database
+
+```{r}
+
+dbWriteTable(lter_db, "mtcars_df", mtcars)
+
+# Check to see what tables are in the database now:
+
+DBI::dbListTables(lter_db)
+
+# Remove a table using dbRemoveTables
+
+DBI::dbRemoveTable(lter_db, "mtcars_df")
+
+```
+
